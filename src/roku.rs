@@ -95,6 +95,14 @@ impl LaunchParams {
                 }
                 None => Some(app_id),
             },
+            RokuApp::Nebula(app_id) => match &self.link {
+                Some(url) => handle_nebula(url).map(|content_id| {
+                    // TODO: Is the mediaType *always* `shortFormVideo`? How could we detect if it
+                    // were something different?
+                    format!("{app_id}?contentId={content_id}&mediaType=shortFormVideo")
+                }),
+                None => Some(app_id),
+            },
         }
         .ok_or(anyhow!("Invalid content identifier"))?;
 
@@ -106,6 +114,8 @@ impl LaunchParams {
 enum RokuApp {
     /// The YouTube application with its application ID.
     YouTube(String),
+    /// The Nebula application with its application ID.
+    Nebula(String),
 }
 
 impl Display for RokuCommand {
@@ -226,6 +236,7 @@ impl TryFrom<App> for RokuApp {
     fn try_from(value: App) -> std::result::Result<Self, Self::Error> {
         match value.name.to_lowercase().as_str() {
             "youtube" => Ok(RokuApp::YouTube(value.id)),
+            "nebula" => Ok(RokuApp::Nebula(value.id)),
             _ => bail!("Unsupported app: {:?}", value),
         }
     }
@@ -335,6 +346,19 @@ fn extract_youtube_content_id_from_url(url: &Url) -> Option<String> {
     }
 }
 
+// TODO: Copy/pasted from `handle_youtube()`. Figure out if this needs to be deduplicated.
+fn handle_nebula(content_id: &str) -> Option<String> {
+    content_id
+        .parse::<Url>()
+        .ok()
+        .as_ref()
+        .and_then(extract_nebula_content_id_from_url)
+}
+
+fn extract_nebula_content_id_from_url(url: &Url) -> Option<String> {
+    url.path_segments()?.last().map(ToOwned::to_owned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,6 +372,16 @@ mod tests {
         test("https://youtube.com/watch?v=123", Some("123"));
         test("https://youtube.com/shorts/123", Some("123"));
         test("https://example.org/video", None);
+        test("not-a-url", None);
+    }
+
+    #[test]
+    fn nebula_urls() {
+        fn test(input: &str, output: Option<&str>) {
+            assert_eq!(handle_nebula(input).as_deref(), output)
+        }
+
+        test("https://nebula.tv/videos/123", Some("123"));
         test("not-a-url", None);
     }
 }
